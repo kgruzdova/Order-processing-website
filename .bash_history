@@ -1,1 +1,0 @@
-Autello_Barskiy
