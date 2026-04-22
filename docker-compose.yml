@@ -20,9 +20,12 @@ services:
     volumes:
       - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
       - ./nginx/conf.d:/etc/nginx/conf.d:ro
-      - ./nginx/html:/usr/share/nginx/html:ro
+      - ./frontend/dist:/usr/share/nginx/html:ro
     depends_on:
-      - pgadmin
+      backend:
+        condition: service_healthy
+      pgadmin:
+        condition: service_started
     networks:
       - autello_net
     labels:
@@ -69,28 +72,36 @@ services:
       - "com.centurylinklabs.watchtower.enable=true"
 
   # ---------------------------------------------------------------------------
-  # Backend (раскомментируйте, когда будет образ)
-  # Сборка/пуш в локальный registry, затем:
-  #   image: ${REGISTRY_PUBLIC_HOST:-localhost}:5000/autello/backend:latest
+  # Backend: без ports: — только сеть compose и Nginx (location /api/).
+  # SQLAlchemy + psycopg v3: префикс postgresql+psycopg://
   # ---------------------------------------------------------------------------
-  # backend:
-  #   image: ${REGISTRY_PUBLIC_HOST:-localhost}:5000/autello/backend:latest
-  #   # build:
-  #   #   context: ./backend
-  #   # dockerfile: Dockerfile
-  #   restart: unless-stopped
-  #   env_file: .env
-  #   environment:
-  #     DATABASE_URL: postgresql://${POSTGRES_USER:-autello}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-autello}
-  #   depends_on:
-  #     postgres:
-  #       condition: service_healthy
-  #   networks:
-  #     - autello_net
-  #   # Без ports: — снаружи только через Nginx (location /api/)
-  #   labels:
-  #     - "com.centurylinklabs.watchtower.enable=true"
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-admin}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-app_db}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - autello_net
+    labels:
+      - "com.centurylinklabs.watchtower.enable=true"
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          'python -c "import urllib.request; urllib.request.urlopen(\"http://127.0.0.1:8000/health\", timeout=3)"',
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
 
+  # Docker Registry - локальный реестр для хранения образов
   registry:
     image: registry:2
     restart: unless-stopped
@@ -116,6 +127,7 @@ services:
     labels:
       - "com.centurylinklabs.watchtower.enable=true"
 
+  # Watchtower - мониторинг и автоматическое обновление контейнеров
   watchtower:
     image: containrrr/watchtower:1.7.1
     restart: unless-stopped
