@@ -4,3 +4,6 @@ sqlalchemy
 psycopg[binary]
 pydantic
 pydantic-settings
+bcrypt
+python-jose[cryptography]
+pydantic[email]

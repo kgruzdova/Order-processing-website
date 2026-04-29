@@ -8,6 +8,7 @@ import {
   getDefaultServices,
   normalizeToStringArray,
   sendBehaviorMetrics,
+  sendBehaviorMetricsStream,
 } from "./api";
 
 const COMPANY_LABELS = ["до 10 человек", "11–50", "51–200", "201–500", "500+"];
@@ -236,6 +237,75 @@ export function initClient(): void {
   const prevVisits = prevVisitsRaw ? Number.parseInt(prevVisitsRaw, 10) : 0;
   const returnVisitsCount = Number.isFinite(prevVisits) ? prevVisits : 0;
   window.localStorage.setItem(visitsKey, String(returnVisitsCount + 1));
+
+  const telemetryStartedAt = Date.now();
+  const buttonCounter = new Map<string, number>();
+  const cursorSamples: Array<{ x: number; y: number; timestamp: number }> = [];
+  let lastCursorX = 0;
+  let lastCursorY = 0;
+
+  const onMouseMove = (event: MouseEvent): void => {
+    lastCursorX = event.clientX;
+    lastCursorY = event.clientY;
+  };
+  window.addEventListener("mousemove", onMouseMove);
+
+  const onTelemetryClick = (event: MouseEvent): void => {
+    const target = event.target as HTMLElement | null;
+    if (!target) {
+      return;
+    }
+    const clickable = target.closest("button, [role='button'], input[type='submit'], input[type='button'], a");
+    if (!clickable) {
+      return;
+    }
+    const keyRaw =
+      clickable.getAttribute("data-telemetry-key") ??
+      clickable.getAttribute("aria-label") ??
+      clickable.textContent ??
+      clickable.id ??
+      "unknown_button";
+    const key = keyRaw.trim().replace(/\s+/g, " ").slice(0, 80) || "unknown_button";
+    const prev = buttonCounter.get(key) ?? 0;
+    buttonCounter.set(key, prev + 1);
+  };
+  document.addEventListener("click", onTelemetryClick);
+
+  const telemetryTimer = window.setInterval(() => {
+    const secondsOnPage = Math.max(1, Math.floor((Date.now() - telemetryStartedAt) / 1000));
+    cursorSamples.push({
+      x: Math.max(0, Math.floor(lastCursorX)),
+      y: Math.max(0, Math.floor(lastCursorY)),
+      timestamp: Date.now(),
+    });
+    if (cursorSamples.length > 600) {
+      cursorSamples.shift();
+    }
+    const buttonsClicked = Array.from(buttonCounter.entries())
+      .map(([name, count]) => `${name}:${count}`)
+      .join("|");
+    const cursorPositions = [...cursorSamples];
+
+    void sendBehaviorMetricsStream({
+      application_id: 0,
+      time_on_page: secondsOnPage,
+      buttons_clicked: buttonsClicked,
+      cursor_positions: cursorPositions,
+      return_frequency: 0,
+    }).catch(() => {
+      /* background telemetry errors are non-blocking */
+    });
+  }, 1000);
+
+  const cleanupTelemetry = (): void => {
+    window.clearInterval(telemetryTimer);
+    window.removeEventListener("mousemove", onMouseMove);
+    document.removeEventListener("click", onTelemetryClick);
+    window.removeEventListener("beforeunload", cleanupTelemetry);
+    window.removeEventListener("pagehide", cleanupTelemetry);
+  };
+  window.addEventListener("beforeunload", cleanupTelemetry);
+  window.addEventListener("pagehide", cleanupTelemetry);
 
   let budgetBounds = budgetBoundsFromAdmin(null);
 

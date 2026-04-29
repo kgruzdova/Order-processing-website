@@ -1,9 +1,112 @@
 import type {
   AdminConfig,
+  BehaviorMetricsRecord,
+  BehaviorMetricsStreamPayload,
+  AdminUserPublic,
   BehaviorMetricsPayload,
   LeadPayload,
   LeadResponse,
+  RegistrationOpenResponse,
+  TokenResponse,
 } from "./types";
+import { ADMIN_JWT_KEY } from "./types";
+
+export function getAdminToken(): string | null {
+  return window.localStorage.getItem(ADMIN_JWT_KEY);
+}
+
+export function setAdminToken(token: string | null): void {
+  if (token) {
+    window.localStorage.setItem(ADMIN_JWT_KEY, token);
+  } else {
+    window.localStorage.removeItem(ADMIN_JWT_KEY);
+  }
+}
+
+export function authJsonHeaders(): HeadersInit {
+  const t = getAdminToken();
+  const h: Record<string, string> = { "Content-Type": "application/json" };
+  if (t) {
+    h.Authorization = `Bearer ${t}`;
+  }
+  return h;
+}
+
+export async function fetchRegistrationOpen(): Promise<RegistrationOpenResponse> {
+  const response = await fetch("/api/auth/registration-open");
+  if (!response.ok) {
+    throw new Error("registration-open failed");
+  }
+  return (await response.json()) as RegistrationOpenResponse;
+}
+
+export async function apiLogin(username: string, password: string): Promise<TokenResponse> {
+  const response = await fetch("/api/auth/login", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ username, password }),
+  });
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}));
+    const detail = (err as { detail?: unknown }).detail;
+    const msg = typeof detail === "string" ? detail : "Не удалось войти";
+    throw new Error(msg);
+  }
+  return (await response.json()) as TokenResponse;
+}
+
+export async function apiRegisterBootstrap(username: string, password: string): Promise<AdminUserPublic> {
+  const response = await fetch("/api/auth/register", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ username, password }),
+  });
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}));
+    const detail = (err as { detail?: unknown }).detail;
+    const msg = typeof detail === "string" ? detail : "register failed";
+    throw new Error(msg);
+  }
+  return (await response.json()) as AdminUserPublic;
+}
+
+export async function apiAuthMe(): Promise<AdminUserPublic> {
+  const response = await fetch("/api/auth/me", { headers: authJsonHeaders() });
+  if (!response.ok) {
+    throw new Error("me failed");
+  }
+  return (await response.json()) as AdminUserPublic;
+}
+
+export async function listAdmins(): Promise<AdminUserPublic[]> {
+  const response = await fetch("/api/admins", { headers: authJsonHeaders() });
+  if (!response.ok) {
+    throw new Error("list admins failed");
+  }
+  return (await response.json()) as AdminUserPublic[];
+}
+
+export async function createAdminUser(username: string, password: string): Promise<AdminUserPublic> {
+  const response = await fetch("/api/admins", {
+    method: "POST",
+    headers: authJsonHeaders(),
+    body: JSON.stringify({ username, password }),
+  });
+  if (!response.ok) {
+    throw new Error("create admin failed");
+  }
+  return (await response.json()) as AdminUserPublic;
+}
+
+export async function deleteAdminUser(id: number): Promise<void> {
+  const response = await fetch(`/api/admins/${id}`, {
+    method: "DELETE",
+    headers: authJsonHeaders(),
+  });
+  if (!response.ok) {
+    throw new Error("delete admin failed");
+  }
+}
 
 export function toValue(rawValue: FormDataEntryValue | null): string {
   return (rawValue ?? "").toString().trim();
@@ -39,13 +142,23 @@ export function buildLeadPayload(data: FormData): LeadPayload {
 export async function createLead(payload: LeadPayload): Promise<LeadResponse> {
   const response = await fetch("/api/leads", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: authJsonHeaders(),
     body: JSON.stringify(payload),
   });
   if (!response.ok) {
     throw new Error(`Lead create failed: ${response.status}`);
   }
   return (await response.json()) as LeadResponse;
+}
+
+export async function listLeads(skip = 0, limit = 100): Promise<LeadResponse[]> {
+  const response = await fetch(`/api/leads?skip=${skip}&limit=${limit}`, {
+    headers: authJsonHeaders(),
+  });
+  if (!response.ok) {
+    throw new Error(`list leads failed: ${response.status}`);
+  }
+  return (await response.json()) as LeadResponse[];
 }
 
 export function buildBehaviorPayload(
@@ -74,12 +187,33 @@ export function buildBehaviorPayload(
 export async function sendBehaviorMetrics(payload: BehaviorMetricsPayload): Promise<void> {
   const response = await fetch("/api/behavior-metrics", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: authJsonHeaders(),
     body: JSON.stringify(payload),
   });
   if (!response.ok) {
     throw new Error(`Behavior metrics create failed: ${response.status}`);
   }
+}
+
+export async function sendBehaviorMetricsStream(payload: BehaviorMetricsStreamPayload): Promise<void> {
+  const response = await fetch("/api/behavior-metrics", {
+    method: "POST",
+    headers: authJsonHeaders(),
+    body: JSON.stringify(payload),
+  });
+  if (!response.ok) {
+    throw new Error(`Behavior stream create failed: ${response.status}`);
+  }
+}
+
+export async function listBehaviorMetrics(skip = 0, limit = 100): Promise<BehaviorMetricsRecord[]> {
+  const response = await fetch(`/api/behavior-metrics?skip=${skip}&limit=${limit}`, {
+    headers: authJsonHeaders(),
+  });
+  if (!response.ok) {
+    throw new Error(`list behavior metrics failed: ${response.status}`);
+  }
+  return (await response.json()) as BehaviorMetricsRecord[];
 }
 
 export function normalizeToStringArray(value: unknown): string[] {
@@ -154,7 +288,7 @@ export function budgetBoundsFromAdmin(value: unknown): BudgetBounds {
 
 export async function fetchLatestAdminConfig(): Promise<AdminConfig | null> {
   try {
-    const response = await fetch("/api/admin-config?limit=1");
+    const response = await fetch("/api/admin-config?limit=1", { headers: authJsonHeaders() });
     if (!response.ok) {
       return null;
     }
@@ -162,6 +296,59 @@ export async function fetchLatestAdminConfig(): Promise<AdminConfig | null> {
     return data[0] ?? null;
   } catch {
     return null;
+  }
+}
+
+export async function listAdminConfigs(limit = 1000): Promise<AdminConfig[]> {
+  const response = await fetch(`/api/admin-config?limit=${limit}`, { headers: authJsonHeaders() });
+  if (!response.ok) {
+    throw new Error(`list admin config failed: ${response.status}`);
+  }
+  return (await response.json()) as AdminConfig[];
+}
+
+export async function createAdminConfig(payload: {
+  services: unknown;
+  budget_range: Record<string, unknown>;
+  extra_ui: Record<string, unknown>;
+}): Promise<AdminConfig> {
+  const response = await fetch("/api/admin-config", {
+    method: "POST",
+    headers: authJsonHeaders(),
+    body: JSON.stringify(payload),
+  });
+  if (!response.ok) {
+    throw new Error(`create admin config failed: ${response.status}`);
+  }
+  return (await response.json()) as AdminConfig;
+}
+
+export async function updateAdminConfig(
+  configId: number,
+  payload: {
+    services?: unknown;
+    budget_range?: Record<string, unknown>;
+    extra_ui?: Record<string, unknown>;
+  },
+): Promise<AdminConfig> {
+  const response = await fetch(`/api/admin-config/${configId}`, {
+    method: "PUT",
+    headers: authJsonHeaders(),
+    body: JSON.stringify(payload),
+  });
+  if (!response.ok) {
+    throw new Error(`update admin config failed: ${response.status}`);
+  }
+  return (await response.json()) as AdminConfig;
+}
+
+export async function deleteAdminConfig(configId: number): Promise<void> {
+  const response = await fetch(`/api/admin-config/${configId}`, {
+    method: "DELETE",
+    headers: authJsonHeaders(),
+  });
+  if (!response.ok) {
+    throw new Error(`delete admin config failed: ${response.status}`);
   }
 }
 

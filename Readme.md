@@ -9,7 +9,7 @@
 - **Языки:** Python 3 (backend), TypeScript (frontend)
 - **Backend:** FastAPI, SQLAlchemy, Pydantic / pydantic-settings, Uvicorn, psycopg (PostgreSQL)
 - **Frontend:** Vite, TypeScript
-- **Инфраструктура:** Docker Compose, Nginx, PostgreSQL 16, pgAdmin 4, опционально Docker Registry и Watchtower (см. `docker-compose.yml`)
+- **Инфраструктура:** Docker Compose, Nginx, PostgreSQL 16, Watchtower, опционально pgAdmin 4 и Docker Registry (через профиль `ops`)
 
 ## Реализованный функционал
 
@@ -18,17 +18,20 @@
 - Раздел администратора по пути `/admin` (заголовок страницы: «Autello — админ»)
 - REST CRUD для заявок, метрик и админ-конфигурации
 - Проверка работоспособности backend: `GET /health`
-- При развёртывании через Compose: проксирование `/api`, `/docs`, `/redoc`, `/openapi.json`, доступ к pgAdmin по префиксу `/pgadmin/`
+- При развёртывании через Compose: API доступно только через Nginx (`/api`), backend-порт не публикуется на хост
+- Для `GET /api/admins` без `Authorization` Nginx возвращает `403 Forbidden`
+- Маршруты `/docs`, `/redoc`, `/openapi.json` и `/pgadmin/` закрыты снаружи (`404`)
 
 ## Инструкция по запуску
 
 ### Вариант 1: Docker Compose (как в репозитории)
 
-1. Скопируйте `.env.example` в `.env` и задайте переменные (в т.ч. `POSTGRES_PASSWORD`, `PGADMIN_DEFAULT_PASSWORD` и при необходимости `PGADMIN_DEFAULT_EMAIL` — см. комментарии в `docker-compose.yml`).
+1. Скопируйте `.env.example` в `.env` и задайте переменные (минимум `POSTGRES_PASSWORD`; остальные опциональны — см. комментарии в `docker-compose.yml`).
 2. Соберите фронтенд: в каталоге `frontend` выполните `npm install` и `npm run build` (в Nginx монтируется `./frontend/dist`).
-3. При использовании Registry (по желанию): перед первым запуском выполните `./scripts/init-registry-auth.sh` (см. комментарии в начале `docker-compose.yml`).
-4. Запуск: `docker compose up -d` из корня проекта.
-5. Сайт: `http://localhost:${HTTP_PORT:-80}` (порт задаётся в `.env`). API снаружи: тот же хост, путь `/api/...`. Документация Swagger: `/docs`.
+3. Запуск базового контура: `docker compose up -d` из корня проекта.
+4. Сайт: `http://localhost:${HTTP_PORT:-80}` (порт задаётся в `.env`). API снаружи: тот же хост, путь `/api/...`.
+5. Если нужен pgAdmin/Registry (временно): `docker compose --profile ops up -d pgadmin registry`.
+6. Для Registry перед первым запуском выполните `./scripts/init-registry-auth.sh` (см. комментарии в `docker-compose.yml`).
 
 ### Вариант 2: Локальная разработка (общая идея)
 
@@ -43,14 +46,21 @@
 |--------|----------------------|
 | Код | Укажите URL вашего Git-репозитория (GitHub/GitLab и т.д.) |
 | Приложение (сайт) | Production/staging URL или `http://<хост>:${HTTP_PORT:-80}` при локальном Compose |
-| pgAdmin | `http://<хост>/pgadmin/` (логин/пароль из `.env`) |
-| Docker Registry | `:<REGISTRY_PORT>` на хосте, учётные данные из `registry/auth/htpasswd` |
+| pgAdmin | Выключен по умолчанию. Включается профилем `ops`; при текущем nginx-конфиге внешний путь `/pgadmin/` закрыт (`404`) |
+| Docker Registry | Выключен по умолчанию. Включается профилем `ops` (порт из `REGISTRY_PORT`) |
 
 *Замените плейсхолдеры на реальные ссылки и учётные данные для вашей команды.*
 
 ## API
 
 Базовый префикс API: **`/api`**. Ниже — эндпоинты и назначение.
+
+### Безопасность и доступ к API через Nginx
+
+- Backend слушает только внутреннюю docker-сеть (`8000/tcp` без публикации на хост).
+- Снаружи API доступно только через Nginx (`http://<host>/api/...`).
+- Для `GET /api/admins` без заголовка `Authorization` Nginx возвращает `403 Forbidden` (HTML-страница nginx).
+- `/docs`, `/redoc`, `/openapi.json`, `/pgadmin/` закрыты через Nginx (`404`).
 
 ### Служебные
 
@@ -88,7 +98,7 @@
 | PUT | `/api/admin-config/{config_id}` | Обновить конфиг |
 | DELETE | `/api/admin-config/{config_id}` | Удалить конфиг |
 
-Интерактивная схема запросов и тел: **Swagger UI** по адресу `/docs`, **ReDoc** — `/redoc`, схема OpenAPI — `/openapi.json` (через Nginx при compose-развёртывании).
+Интерактивная схема запросов и тел может быть доступна только во внутреннем контуре/локально; при текущем прод-конфиге через Nginx маршруты `/docs`, `/redoc`, `/openapi.json` закрыты.
 
 ### Команды бота
 

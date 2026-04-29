@@ -19,9 +19,11 @@ export type LeadPayload = {
 };
 
 export type AdminConfig = {
-  services?: unknown;
-  budget_range?: unknown;
-  extra_ui?: unknown;
+  id: number;
+  services: unknown;
+  budget_range: unknown;
+  extra_ui: unknown;
+  updated_at: string;
 };
 
 export type LeadResponse = LeadPayload & {
@@ -36,4 +38,38 @@ export type BehaviorMetricsPayload = {
   cursor_hover_zones: string[];
   return_visits_count: number;
   technical_payload: Record<string, unknown>;
+};
+
+export type BehaviorMetricsStreamPayload = {
+  application_id: number;
+  time_on_page: number;
+  buttons_clicked: string;
+  cursor_positions: Array<{ x: number; y: number; timestamp: number }>;
+  return_frequency: number;
+};
+
+export type BehaviorMetricsRecord = {
+  application_id: number;
+  time_on_page_seconds: number;
+  button_clicks: unknown;
+  cursor_hover_zones: unknown;
+  return_visits_count: number;
+  technical_payload: Record<string, unknown>;
+};
+
+export const ADMIN_JWT_KEY = "autello_admin_jwt";
+
+export type TokenResponse = {
+  access_token: string;
+  token_type: string;
+};
+
+export type RegistrationOpenResponse = {
+  registration_open: boolean;
+};
+
+export type AdminUserPublic = {
+  id: number;
+  username: string;
+  created_at: string;
 };

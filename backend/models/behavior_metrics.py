@@ -26,19 +26,21 @@ class BehaviorMetrics(Base):
 
     __tablename__ = "behavior_metrics"
 
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     application_id: Mapped[int] = mapped_column(
         Integer,
         ForeignKey("lead_applications.id", ondelete="CASCADE"),
-        primary_key=True,
+        nullable=False,
+        index=True,
     )
-    time_on_page_seconds: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    time_on_page_seconds: Mapped[int] = mapped_column("time_on_page", Integer, nullable=False, default=0)
     button_clicks: Mapped[list | dict] = mapped_column(
-        JSONB, nullable=False, server_default=text("'[]'::jsonb")
+        "buttons_clicked", JSONB, nullable=False, server_default=text("'[]'::jsonb")
     )
     cursor_hover_zones: Mapped[list | dict] = mapped_column(
-        JSONB, nullable=False, server_default=text("'[]'::jsonb")
+        "cursor_positions", JSONB, nullable=False, server_default=text("'[]'::jsonb")
     )
-    return_visits_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    return_visits_count: Mapped[int] = mapped_column("return_frequency", Integer, nullable=False, default=0)
     technical_payload: Mapped[dict] = mapped_column(
         JSONB, nullable=False, server_default=text("'{}'::jsonb")
     )
@@ -58,11 +60,17 @@ class BehaviorMetricsCRUD:
 
     @staticmethod
     def get_by_application_id(db: Session, application_id: int) -> BehaviorMetrics | None:
-        return db.get(BehaviorMetrics, application_id)
+        stmt = (
+            select(BehaviorMetrics)
+            .where(BehaviorMetrics.application_id == application_id)
+            .order_by(BehaviorMetrics.id.desc())
+            .limit(1)
+        )
+        return db.scalars(stmt).first()
 
     @staticmethod
     def list_all(db: Session, skip: int = 0, limit: int = 100) -> list[BehaviorMetrics]:
-        stmt = select(BehaviorMetrics).offset(skip).limit(limit)
+        stmt = select(BehaviorMetrics).order_by(BehaviorMetrics.id.desc()).offset(skip).limit(limit)
         return list(db.scalars(stmt).all())
 
     @staticmethod

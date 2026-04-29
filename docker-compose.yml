@@ -24,8 +24,6 @@ services:
     depends_on:
       backend:
         condition: service_healthy
-      pgadmin:
-        condition: service_started
     networks:
       - autello_net
     labels:
@@ -52,6 +50,7 @@ services:
   pgadmin:
     image: dpage/pgadmin4:8
     restart: unless-stopped
+    profiles: ["ops"]
     environment:
       # pgAdmin 8 строго валидирует email: *.local и часть «псевдо-доменов» отклоняются — см. .env.example
       PGADMIN_DEFAULT_EMAIL: ${PGADMIN_DEFAULT_EMAIL:-admin@example.com}
@@ -105,6 +104,7 @@ services:
   registry:
     image: registry:2
     restart: unless-stopped
+    profiles: ["ops"]
     environment:
       # Слушать все интерфейсы внутри контейнера (снаружи — проброс порта ниже на 0.0.0.0)
       REGISTRY_HTTP_ADDR: 0.0.0.0:5000
